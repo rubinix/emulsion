@@ -1,0 +1,63 @@
+U29 = U29-1 | U29-2 | U29-3 | U29-4
+U29-1 = %x00-7F
+U29-2 = %x80-FF %x00-7F
+U29-3 = %x80-FF %x80-FF %x00-7F
+U29-4 = %x80-FF %x80-FF %x80-FF %x00-FF
+
+UTF8-char = UTF8-1 | UTF8-2 | UTF8-3 | UTF8-4
+UTF8-1 = %x00-7F
+UTF8-2 = %xC2-DF UTF8-tail
+UTF8-3 = %xE0 %xA0-BF UTF8-tail | %xE1-EC 2(UTF8-tail) | %xED %x80-9F UTF8-tail | %xEE-EF 2(UTF8-tail)
+UTF8-4 = %xF0 %x90-BF 2(UTF8-tail) | %xF1-F3 3(UTF8-tail) | %xF4 %x80-8F 2(UTF8-tail)
+UTF8-tail = %x80-BF
+U29S-ref = U29
+U29S-value = U29
+UTF-8-empty = 0x01
+UTF-8-vr = U29S-ref
+
+marker = U8
+undefined-marker = 0x00
+null-marker = 0x01
+false-marker = 0x02
+true-marker = 0x03
+integer-marker = 0x04
+double-marker = 0x05
+string-marker = 0x06
+xml-doc-marker = 0x07
+date-marker = 0x08
+array-marker = 0x09
+object-marker = 0x0A
+xml-marker = 0x0B
+byte-array-marker = 0x0C
+
+value-type = undefined-marker | null-marker | false-marker | true-marker | integer-type | double-type | string-type | xml-doc-type | date-type | array-type | object-type | xml-type | byte-array-type
+
+undefined-type = undefined-marker
+null-type = null-marker
+false-type = false-marker
+true-type = true-marker
+integer-type = integer-marker U29
+double-type = double-marker DOUBLE
+string-type = string-marker UTF-8-vr
+U29X-value = U29
+xml-doc-type = xml-doc-marker (U29O-ref | (U29X-value *(UTF8-char)))
+U29D-value = U29
+date-time = DOUBLE
+date-type = date-marker (U29O-ref | (U29D-value date-time))
+
+U29A-value = U29
+assoc-value = UTF-8-vr value-type
+array-type = array-marker (U29O-ref | (U29A-value (UTF-8-empty | *(assoc-value) UTF-8-empty) *(value-type)))
+
+U29O-ref = U29
+U29O-traits-ref = U29
+U29O-traits-ext = U29
+U29O-traits = U29
+class-name = UTF-8-vr
+dynamic-member = UTF-8-vr value-type
+object-type = object-marker (U29O-ref | (U29O-traits-ext class-name *(U8)) | U29O-traits-ref | (U29O-traits class-name *(UTF-8-vr))) *(value-type) *(dynamic-member)))
+
+xml-type = xml-marker (U29O-ref | (U29X-value *(UTF8-char)))
+
+U29B-value = U29
+bytearray-type = bytearray-marker (U29O-ref | U29B-value *(U8))
