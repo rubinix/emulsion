@@ -1,3 +1,4 @@
+#include <stdio.h> 
 #include "ruby.h"
 #include "emulsion.h"
 
@@ -74,11 +75,10 @@ static VALUE parse_string(char *p, char *pe) {
 	               result = result | *p;
 	             }
 	            else {
-	  //           //Use all 8 bits from the 4th byte
+	               //Use all 8 bits from the 4th byte
 	               result = result << 8;
 	               result = result | *p;
-	  //           
-	  //             #Check if the integer should be negative
+	               //Check if the integer should be negative
 	               if (result > 268435455) {
 	                 result = result - (1 << 29);
 	               }
@@ -86,15 +86,47 @@ static VALUE parse_string(char *p, char *pe) {
 	          }
 	}
 
-	main:= (U29*)$shift;
+	main:= (U29)$shift;
 }%%
 static VALUE parse_integer(char *p, char *pe) {
+  ++p;
   int cs = EVIL;
   int n = 0;
-  long int result = 0;
+  signed long result = 0;
   %% write init;
   %% write exec;
   return INT2NUM(result);
+}
+
+%%{
+	machine amf_double;
+	write data;
+	include amf_common;
+
+	action shift {
+	  //if(n < 7) {
+   	    result = result << 8;
+	    result = result | *p;
+	    //++n;
+	  //}
+	  //else {
+	  //  result = result << 7;
+	  //  result = result | (*p >> 1)
+	    
+	  //}
+	}
+
+	main:= (U29){8}$shift;
+}%%
+static VALUE parse_double(char *p, char *pe) {
+  ++p;
+  int cs = EVIL;
+  int n = 0;
+  signed long long int result = 0;
+  %% write init;
+  %% write exec;
+  return INT2NUM(result);
+
 }
 
 %%{
@@ -117,11 +149,20 @@ static VALUE parse_integer(char *p, char *pe) {
 	action parse_integer {
 	  return parse_integer(fpc, pe);
 	}
+
+	action parse_double {
+	  //return parse_double(fpc,pe);
+	  p++;
+	  VALUE result = rb_str_new(p, 8);
+	  VALUE g = rb_str_new2("G");
+	  return rb_funcall( result, rb_intern("unpack"), 1, g );
+	}
 	
 	main := ( string_marker>parse_string |
 	          false_marker>parse_false |
 	          true_marker>parse_true |
-	          integer_marker>parse_integer )*;
+	          integer_marker>parse_integer |
+		  double_marker>parse_double )*;
 	
 }%%
 static VALUE parse(VALUE self, VALUE amf) {
@@ -133,7 +174,6 @@ static VALUE parse(VALUE self, VALUE amf) {
   
 %% write init;
 p = RSTRING(source)->ptr;
-//printf("The value is: %d", *p);
 pe = p + len;
 %% write exec;
 	return amf;
