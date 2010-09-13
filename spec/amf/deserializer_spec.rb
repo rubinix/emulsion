@@ -134,7 +134,6 @@ describe "when deserializing" do
 
         input = object_fixture("amf3-min.bin")
         output = @parser.parse(input)
-        # output.should == RocketAMF::MIN_INTEGER
         output.should == -268435456
       end
 
@@ -143,34 +142,34 @@ describe "when deserializing" do
         output = @parser.parse(input)
         output.should == 268435455 + 1
 
-        # input = object_fixture("amf3-largeMin.bin")
-        # output = RocketAMF.deserialize(input, 3)
-        # output.should == RocketAMF::MIN_INTEGER - 1
+        input = object_fixture("amf3-largeMin.bin")
+        output = @parser.parse(input)
+        output.should == -268435456 - 1
       end
 
       # it "should deserialize BigNums" do
         # input = object_fixture("amf3-bigNum.bin")
-        # output = RocketAMF.deserialize(input, 3)
+        # output = @parser.parse(input)
         # output.should == 2**1000
       # end
 
-      # it "should deserialize a simple string" do
-        # input = object_fixture("amf3-string.bin")
-        # output = RocketAMF.deserialize(input, 3)
-        # output.should == "String . String"
-      # end
+      it "should deserialize a simple string" do
+        input = object_fixture("amf3-string.bin")
+        output = @parser.parse(input)
+        output.should == "String . String"
+      end
 
-      # it "should deserialize a symbol as a string" do
-        # input = object_fixture("amf3-symbol.bin")
-        # output = RocketAMF.deserialize(input, 3)
-        # output.should == "foo"
-      # end
+      it "should deserialize a symbol as a string" do
+        input = object_fixture("amf3-symbol.bin")
+        output = @parser.parse(input)
+        output.should == "foo"
+      end
 
-      # it "should deserialize dates" do
-        # input = object_fixture("amf3-date.bin")
-        # output = RocketAMF.deserialize(input, 3)
-        # output.should == Time.at(0)
-      # end
+      it "should deserialize dates" do
+        input = object_fixture("amf3-date.bin")
+        output = @parser.parse(input)
+        output.should == Time.at(0)
+      end
 
       # it "should deserialize XML" do
         # XMLDocument tag

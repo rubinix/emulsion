@@ -1,6 +1,8 @@
-#include <stdio.h> 
+#include <stdio.h>
+#include <string.h>
 #include "ruby.h"
 #include "emulsion.h"
+
 
 #define EVIL 0x666
 static VALUE parse_string(char *p, char *pe);
@@ -50,6 +52,7 @@ static VALUE cEmulsion;
 
 main:= (U29S_ref | U29S_value (UTF8_char*)${ rb_str_cat( result, p, 1 ); });
 }%%
+//TODO Fix string parser to not use sb_str_cat
 static VALUE parse_string(char *p, char *pe) {
   VALUE result = rb_str_new("", 0);
   int cs = EVIL;
@@ -60,11 +63,10 @@ static VALUE parse_string(char *p, char *pe) {
 
 static VALUE parse_integer(char *p, char *pe) {
   ++p;
-  int cs = EVIL;
   int n = 0;
   unsigned char b = 0;
-  b = *p;
   unsigned long result = 0;
+  b = *p;
 
   while((b & 0x80) != 0 && n < 3) {
     result = result << 7;
@@ -91,61 +93,32 @@ static VALUE parse_integer(char *p, char *pe) {
   return INT2NUM(result);
 }
 
-%%{
-  machine amf_double;
-  write data;
-  include amf_common;
-
-  action shift {
-    //if(n < 7) {
-    result = result << 8;
-    result = result | *p;
-    //++n;
-    //}
-    //else {
-    //  result = result << 7;
-    //  result = result | (*p >> 1)
-
-    //}
-  }
-
-main:= (U29){8}$shift;
-}%%
-// static VALUE parse_double(char *p, char *pe) {
-//   ++p;
-//   int cs = EVIL;
-//   int n = 0;
-//   signed long int result = 0;
-//   %% write init;
-//   %% write exec;
-//   return INT2NUM(result);
-// 
-// }
 static VALUE parse_double(char *p, char *pe) {
   p++;
-  long long result = 0;
+
+  union doubleOrByte {
+    char buffer[sizeof(double)];
+    double val;
+  } converter;
+
   int i = 0;
-  for(i=0; i < 8; i++) {
-    result = result << 8;
-    result = result | *p;
-    p++;
+
+  for(i = 7; i >= 0; i--) {
+    converter.buffer[i] = *p;
+    ++p;
   }
 
-  printf("Output: %d", result);
-
-  return INT2NUM(result);
-
-
-  /*VALUE result = rb_str_new(p, 8);
-  VALUE g = rb_str_new2("G");
-  return rb_funcall( result, rb_intern("unpack"), 1, g );*/
+  return INT2NUM(converter.val);
 }
 
 static VALUE parse_date(char *p, char *pe) {
-  int cs = EVIL;
+  ++p;
+  //int cs = EVIL;
   int n = 0;
   unsigned long int result = 0;
-
+  printf("bam");
+  VALUE date = rb_time_new(10,10);
+  return date;
 }
 
 %%{
@@ -178,9 +151,6 @@ static VALUE parse_date(char *p, char *pe) {
   }
 
   action parse_date {
-    printf("Got a date?");
-    ++p;
-    ++p;
     parse_date(fpc, pe);
   }
 
