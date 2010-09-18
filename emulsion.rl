@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "ruby.h"
 #include "emulsion.h"
 
@@ -34,11 +35,11 @@ static VALUE cEmulsion;
   integer_marker = 0x04;
   double_marker = 0x05;
   string_marker = 0x06;
-  xml_doc_marker = "\a";
+  xml_doc_marker = 0x07;
   date_marker = "\b";
   array_marker = "\t";
-  object_marker = "\n";
-  xml_marker = "\v";
+  object_marker = 0x0A;
+  xml_marker = 0x0B;
   byte_array_marker = "\f";
   undefined_type = undefined_marker;
   string_type = string_marker UTF_8_vr;
@@ -113,12 +114,33 @@ static VALUE parse_double(char *p, char *pe) {
 
 static VALUE parse_date(char *p, char *pe) {
   ++p;
-  //int cs = EVIL;
-  int n = 0;
-  unsigned long int result = 0;
-  printf("bam");
-  VALUE date = rb_time_new(10,10);
-  return date;
+  ++p;
+
+  union doubleOrByte {
+    char buffer[sizeof(time_t)];
+    time_t val;
+  } converter;
+
+  int i = 0;
+
+  for(i = 7; i >= 0; i--) {
+    converter.buffer[i] = *p;
+    ++p;
+  }
+
+  VALUE time = rb_time_new(0, converter.val);
+  return time;
+}
+
+static VALUE parse_xml(char *p, char *pe) {
+  ++p;
+  unsigned long length = *p >> 1;
+  ++p;
+
+  return rb_str_new(p, length);
+}
+
+static VALUE parse_object(char *p, char *pe) {
 }
 
 %%{
@@ -151,7 +173,15 @@ static VALUE parse_date(char *p, char *pe) {
   }
 
   action parse_date {
-    parse_date(fpc, pe);
+    return parse_date(fpc, pe);
+  }
+
+  action parse_xml {
+    return parse_xml(fpc, pe);
+  }
+
+  action parse_object {
+    return parse_object(fpc, pe);
   }
 
 main := ( null_marker>parse_null |
@@ -160,7 +190,10 @@ main := ( null_marker>parse_null |
           true_marker>parse_true |
           integer_marker>parse_integer |
           double_marker>parse_double |
-          date_marker>parse_date )*;
+          date_marker>parse_date |
+          xml_doc_marker>parse_xml |
+          xml_marker>parse_xml |
+          object_marker>parse_object)*;
 
 }%%
 static VALUE parse(VALUE self, VALUE amf) {

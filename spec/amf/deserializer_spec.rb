@@ -171,23 +171,23 @@ describe "when deserializing" do
         output.should == Time.at(0)
       end
 
-      # it "should deserialize XML" do
+      it "should deserialize XML" do
         # XMLDocument tag
-        # input = object_fixture("amf3-xmlDoc.bin")
-        # output = RocketAMF.deserialize(input, 3)
-        # output.should == '<parent><child prop="test" /></parent>'
+        input = object_fixture("amf3-xmlDoc.bin")
+        output = @parser.parse(input)
+        output.should == '<parent><child prop="test" /></parent>'
 
         # XML tag
-        # input = object_fixture("amf3-xml.bin")
-        # output = RocketAMF.deserialize(input, 3)
-        # output.should == '<parent><child prop="test"/></parent>'
-      # end
+        input = object_fixture("amf3-xml.bin")
+        output = @parser.parse(input)
+        output.should == '<parent><child prop="test"/></parent>'
+      end
     end
 
     describe "objects" do
       it "should deserialize an unmapped object as a dynamic anonymous object" do
         input = object_fixture("amf3-dynObject.bin")
-        output = RocketAMF.deserialize(input, 3)
+        output = @parse.parse(input)
 
         expected = {
           :property_one => 'foo',
