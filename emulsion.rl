@@ -8,7 +8,9 @@
 #define EVIL 0x666
 static VALUE parse_string(char *p, char *pe);
 static VALUE parse(VALUE self, VALUE amf);
+static char *parseAmf(char *p, char *pe, VALUE *val);
 static VALUE cEmulsion;
+
 
 %%{
   machine amf_common;
@@ -44,58 +46,47 @@ static VALUE cEmulsion;
   undefined_type = undefined_marker;
   string_type = string_marker UTF_8_vr;
   integer_type = integer_marker U29;
+  U29O_traits = U29;
+  class_name =  UTF_8_vr;
+  value_type = undefined_marker | null_marker | false_marker | true_marker | integer_type | string_type;
+  
 }%%
 
-%%{
-  machine amf_string;
-  write data;
-  include amf_common;
-
-main:= (U29S_ref | U29S_value (UTF8_char*)${ rb_str_cat( result, p, 1 ); });
-}%%
-//TODO Fix string parser to not use sb_str_cat
-static VALUE parse_string(char *p, char *pe) {
-  VALUE result = rb_str_new("", 0);
-  int cs = EVIL;
-  %% write init;
-  %% write exec;
-  return result;
-}
-
-static VALUE parse_integer(char *p, char *pe) {
-  ++p;
+static char *parseInteger(char *p, unsigned long *result) {
   int n = 0;
   unsigned char b = 0;
-  unsigned long result = 0;
   b = *p;
 
   while((b & 0x80) != 0 && n < 3) {
-    result = result << 7;
-    result = result | (b & 0x7f);
+    *result = *result << 7;
+    *result = *result | (b & 0x7f);
     ++p;
     b = *p;
     ++n;
   }
 
   if (n < 3) {
-    result = result << 7;
-    result = result | b;
+    *result = *result<< 7;
+    *result = *result| b;
   }
   else {
     //Use all 8 bits from the 4th byte
-    result = result << 8;
-    result = result | b;
+    *result = *result << 8;
+    *result = *result | b;
     //Check if the integer should be negative
-    if (result > 268435455) {
-      result -= (1 << 29);
+    if (*result > 268435455) {
+      *result -= (1 << 29);
     }
   }
 
-  return INT2NUM(result);
+  //Increment the pointet to point to the next characer to process
+  if(n == 0) {
+    ++p;
+  }
+  return p;
 }
 
-static VALUE parse_double(char *p, char *pe) {
-  p++;
+static char *parseDouble(char *p, double *result) {
 
   union doubleOrByte {
     char buffer[sizeof(double)];
@@ -109,14 +100,44 @@ static VALUE parse_double(char *p, char *pe) {
     ++p;
   }
 
-  return INT2NUM(converter.val);
+  *result = converter.val;
+  return p;
 }
 
-static VALUE parse_date(char *p, char *pe) {
-  ++p;
-  ++p;
 
-  union doubleOrByte {
+%%{
+  machine amf_string;
+  write data;
+  include amf_common;
+
+  action parse_length {
+    np = parseInteger(fpc, &length);
+    length = length >> 1;
+    fexec np;
+  }
+
+  action parse_string {
+   *result = rb_str_new(fpc, length);
+  }
+
+main:= U29S_value >parse_length (UTF8_char+ >parse_string);
+}%%
+static char *parseString(char *p, char *pe, VALUE *result) {
+  int cs = EVIL;
+  unsigned long length = 0;
+  char *np;
+
+  %% write init;
+  %% write exec;
+
+  return np+length;
+}
+
+static char *parseDate(char *p, VALUE *result) {
+  p++;
+  p++;
+
+  union timeOrByte {
     char buffer[sizeof(time_t)];
     time_t val;
   } converter;
@@ -128,19 +149,62 @@ static VALUE parse_date(char *p, char *pe) {
     ++p;
   }
 
-  VALUE time = rb_time_new(0, converter.val);
-  return time;
+  *result = rb_time_new(0, converter.val);
+  return p;
 }
 
-static VALUE parse_xml(char *p, char *pe) {
-  ++p;
-  unsigned long length = *p >> 1;
-  ++p;
-
-  return rb_str_new(p, length);
+static char *parseXml(char *p, VALUE *result) {
+  *p = *p >> 1;
+  unsigned long length = 0;
+  char *np = parseInteger(p, &length);
+  *result = rb_str_new(np, length);
+  return np+length;
 }
 
-static VALUE parse_object(char *p, char *pe) {
+%%{
+  machine amf_object;
+  write data;
+  include amf_common;
+
+  action parseDynamic {
+    unsigned long flag;
+    char *np = parseInteger(fpc, &flag);
+    unsigned char isDynamic = (flag & 0x08) != 0 ? 1 : 0;
+    if(isDynamic == 1) {
+      *value = rb_hash_new();
+    }
+    fexec np;
+  }
+
+  action parseClassName {
+  }
+
+  action parseMemberName {
+    char *np = parseString(fpc, pe, &memberName);
+    fexec np;
+    fnext v_type;
+  }
+
+  action parseType {
+    char *np = parseAmf(fpc, pe, &memberValue);
+    rb_hash_aset(*value, rb_str_intern(memberName), memberValue);
+    fexec np;
+    fnext member;
+  }
+
+  member := (U29S_value)>parseMemberName;
+  v_type := value_type >parseType;
+  object:= U29O_traits >parseDynamic class_name >parseClassName (U29S_value)> {fhold; fgoto member;};
+}%%
+
+static char *parseObject(char *p, char *pe, VALUE *value) {
+  int cs = EVIL;
+  unsigned char isDynamic;
+  VALUE memberName = Qnil;
+  VALUE memberValue = Qnil;
+  %% write init;
+  %% write exec;
+  return p;
 }
 
 %%{
@@ -149,65 +213,96 @@ static VALUE parse_object(char *p, char *pe) {
   include amf_common;
 
   action parse_null {
-    return Qnil;
-  }
-
-  action parse_string {
-    return parse_string(fpc+1, pe);
+    *value = Qnil;
+    np = fpc+1;
+    fbreak;
   }
 
   action parse_false {
-    return Qfalse;
+    *value = Qfalse;
+    np = fpc+1;
+    fbreak;
   }
 
   action parse_true {
-    return Qtrue;
+    *value = Qtrue;
+    np = fpc+1;
+    fbreak;
   }
 
   action parse_integer {
-    return parse_integer(fpc, pe);
+    fpc++;
+    unsigned long intValue = 0;
+    np = parseInteger(fpc, &intValue);
+    *value = INT2NUM(intValue);
+    fbreak;
   }
 
   action parse_double {
-    return parse_double(fpc,pe);
+    fpc++;
+    double doubleValue = 0.0;
+    np = parseDouble(fpc, &doubleValue);
+    *value = INT2NUM(doubleValue);
+    fbreak;
   }
 
   action parse_date {
-    return parse_date(fpc, pe);
+    np = parseDate(fpc, value);
+    fbreak;
   }
 
   action parse_xml {
-    return parse_xml(fpc, pe);
+    fpc++;
+    parseXml(fpc, value);
+    fbreak;
+  }
+
+  action parse_string {
+    fpc++;
+    np = parseString(fpc, pe, value);
+    fbreak;
   }
 
   action parse_object {
-    return parse_object(fpc, pe);
+    fpc++;
+    np = parseObject(fpc, pe, value);
+    fbreak;
   }
 
-main := ( null_marker>parse_null |
-          string_marker>parse_string |
-          false_marker>parse_false |
-          true_marker>parse_true |
-          integer_marker>parse_integer |
-          double_marker>parse_double |
-          date_marker>parse_date |
-          xml_doc_marker>parse_xml |
-          xml_marker>parse_xml |
-          object_marker>parse_object)*;
+  action exit {
+    //fhold; fbreak;
+  }
+
+  main := ( null_marker>parse_null |
+            string_type> parse_string |
+            false_marker>parse_false |
+            true_marker>parse_true |
+            integer_marker >parse_integer |
+            double_marker>parse_double |
+            date_marker>parse_date |
+            xml_doc_marker>parse_xml |
+            xml_marker>parse_xml |
+            object_marker >parse_object)%*exit;
 
 }%%
-static VALUE parse(VALUE self, VALUE amf) {
-  char *p, *pe;
+static char *parseAmf(char *p, char *pe, VALUE *value) {
   int cs = EVIL;
-  VALUE result = Qnil;
-  VALUE source = StringValue(amf);
-  long len = RSTRING(source)->len;
+  char *np;
 
   %% write init;
-  p = RSTRING(source)->ptr;
-  pe = p + len;
   %% write exec;
-  return amf;
+
+  return np;
+}
+
+static VALUE parse(VALUE self, VALUE amf) {
+  VALUE source = StringValue(amf);
+  VALUE value = Qnil;
+  long len = RSTRING(source)->len;
+  char *p = RSTRING(source)->ptr;
+  char *pe = p + len;
+  parseAmf(p, pe, &value);
+  return value;
 }
 
 void Init_emulsion()
