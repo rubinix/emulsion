@@ -10,6 +10,20 @@ require 'spec/autorun'
 $:.unshift(File.dirname(__FILE__) + '/../lib')
 require 'emulsion'
 
+class Emulsion
+
+  @mappings = {}
+
+  def self.map(mappings)
+    @mappings = mappings
+  end
+
+  def self.class_for(key)
+    @mappings[key]
+  end
+
+end
+
 def request_fixture(binary_path)
   data = File.open(File.dirname(__FILE__) + '/fixtures/request/' + binary_path).read
   data.force_encoding("ASCII-8BIT") if data.respond_to?(:force_encoding)

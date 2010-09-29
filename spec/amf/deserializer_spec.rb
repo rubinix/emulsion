@@ -1,4 +1,7 @@
 # encoding: UTF-8
+class RubyClass
+  attr_accessor :foo, :baz
+end
 
 require File.dirname(__FILE__) + '/../spec_helper.rb'
 
@@ -199,10 +202,10 @@ describe "when deserializing" do
       end
 
       it "should deserialize a mapped object as a mapped ruby class instance" do
-        RocketAMF::ClassMapper.define {|m| m.map :as => 'org.rocketAMF.ASClass', :ruby => 'RubyClass'}
+        Emulsion.map("org.rocketAMF.ASClass" => RubyClass)
 
         input = object_fixture("amf3-typedObject.bin")
-        output = RocketAMF.deserialize(input, 3)
+        output = @parser.parse(input)
 
         output.should be_a(RubyClass)
         output.foo.should == 'bar'
@@ -211,7 +214,7 @@ describe "when deserializing" do
 
       it "should deserialize a hash as a dynamic anonymous object" do
         input = object_fixture("amf3-hash.bin")
-        output = RocketAMF.deserialize(input, 3)
+        output = @parser.parse(input)
         output.should == {:foo => "bar", :answer => 42}
       end
 

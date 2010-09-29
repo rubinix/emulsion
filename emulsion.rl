@@ -169,14 +169,31 @@ static char *parseXml(char *p, VALUE *result) {
   action parseDynamic {
     unsigned long flag;
     char *np = parseInteger(fpc, &flag);
-    unsigned char isDynamic = (flag & 0x08) != 0 ? 1 : 0;
-    if(isDynamic == 1) {
-      *value = rb_hash_new();
-    }
+    isDynamic = (flag & 0x08) != 0 ? 1 : 0;
     fexec np;
   }
 
   action parseClassName {
+    if(*fpc == 0x01) {
+      *value = rb_hash_new();
+      fpc++;
+      fexec fpc;
+    }
+    else {
+      isConcrete = 1;
+      char *np = parseString(fpc, pe, &className);
+
+      VALUE class = rb_funcall(cEmulsion, classForId, 1, className);
+
+      if(class == Qnil) {
+        ID class_id = rb_intern(StringValuePtr(className));
+        class = rb_const_get(rb_cObject, class_id);
+      }
+
+      VALUE argv[0];
+      *value = rb_class_new_instance(0, argv, class);
+      fexec np;
+    }
   }
 
   action parseMemberName {
@@ -187,7 +204,17 @@ static char *parseXml(char *p, VALUE *result) {
 
   action parseType {
     char *np = parseAmf(fpc, pe, &memberValue);
-    rb_hash_aset(*value, rb_str_intern(memberName), memberValue);
+    if(isConcrete) {
+      unsigned long memberNameLen = RSTRING(memberName)->len;
+      char instance_var_name[memberNameLen + 1];
+      instance_var_name[0] = '\0';
+      strncat(instance_var_name, "@", 1);
+      strncat(instance_var_name, RSTRING(memberName)->ptr, memberNameLen);
+      rb_iv_set(*value, instance_var_name, memberValue);
+    }
+    else {
+      rb_hash_aset(*value, rb_str_intern(memberName), memberValue);
+    }
     fexec np;
     fnext member;
   }
@@ -199,9 +226,12 @@ static char *parseXml(char *p, VALUE *result) {
 
 static char *parseObject(char *p, char *pe, VALUE *value) {
   int cs = EVIL;
+  VALUE className = Qnil;
   unsigned char isDynamic;
+  unsigned char isConcrete = 0;
   VALUE memberName = Qnil;
   VALUE memberValue = Qnil;
+  ID classForId = rb_intern("class_for");
   %% write init;
   %% write exec;
   return p;
