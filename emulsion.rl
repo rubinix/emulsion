@@ -11,6 +11,12 @@ static VALUE parse(VALUE self, VALUE amf);
 static char *parseAmf(char *p, char *pe, VALUE *val);
 static VALUE cEmulsion;
 
+static VALUE stringRefs[100];
+static int stringRefsTop = 0;
+
+static VALUE objectRefs[100];
+static int objectRefsTop = 0;
+
 
 %%{
   machine amf_common;
@@ -28,6 +34,7 @@ static VALUE cEmulsion;
   UTF8_char = UTF8_1 | UTF8_2 | UTF8_3 | UTF8_4;
   U29S_ref = U29;
   U29S_value = U29;
+  U29A_value = U29;
   UTF_8_empty = 0x01;
   UTF_8_vr = U29S_ref | ( U29S_value UTF8_char* );
   undefined_marker = "\0";
@@ -39,7 +46,7 @@ static VALUE cEmulsion;
   string_marker = 0x06;
   xml_doc_marker = 0x07;
   date_marker = "\b";
-  array_marker = "\t";
+  array_marker = 0x09;
   object_marker = 0x0A;
   xml_marker = 0x0B;
   byte_array_marker = "\f";
@@ -48,8 +55,7 @@ static VALUE cEmulsion;
   integer_type = integer_marker U29;
   U29O_traits = U29;
   class_name =  UTF_8_vr;
-  value_type = undefined_marker | null_marker | false_marker | true_marker | integer_type | string_type;
-  
+  value_type = undefined_marker | null_marker | false_marker | true_marker | integer_type | double_marker | string_type | xml_doc_marker | date_marker | array_marker | object_marker | xml_marker | byte_array_marker;
 }%%
 
 static char *parseInteger(char *p, unsigned long *result) {
@@ -111,13 +117,24 @@ static char *parseDouble(char *p, double *result) {
   include amf_common;
 
   action parse_length {
-    np = parseInteger(fpc, &length);
-    length = length >> 1;
-    fexec np;
+    if(*fpc & 0x01 == 1) {
+      np = parseInteger(fpc, &length);
+      length = length >> 1;
+      fexec np;
+    }
+    else {
+      *fpc = *fpc > 1;
+      np = parseInteger(fpc, &stringIndex);
+      *result = stringRefs[stringIndex];
+      fexec np;
+      fbreak;
+    }
   }
 
   action parse_string {
    *result = rb_str_new(fpc, length);
+   stringRefs[stringRefsTop] = *result;
+   stringRefsTop++;
   }
 
 main:= U29S_value >parse_length (UTF8_char+ >parse_string);
@@ -126,6 +143,7 @@ static char *parseString(char *p, char *pe, VALUE *result) {
   int cs = EVIL;
   unsigned long length = 0;
   char *np;
+  unsigned long stringIndex = 0;
 
   %% write init;
   %% write exec;
@@ -167,10 +185,20 @@ static char *parseXml(char *p, VALUE *result) {
   include amf_common;
 
   action parseDynamic {
-    unsigned long flag;
-    char *np = parseInteger(fpc, &flag);
-    isDynamic = (flag & 0x08) != 0 ? 1 : 0;
-    fexec np;
+
+    if(*fpc & 0x01 == 1) {
+      unsigned long flag;
+      char *np = parseInteger(fpc, &flag);
+      isDynamic = (flag & 0x08) != 0 ? 1 : 0;
+      fexec np;
+    }
+    else {
+      *fpc = *fpc > 1;
+      np = parseInteger(fpc, &objectIndex);
+      *value = objectRefs[objectIndex];
+      fexec np;
+      fbreak;
+    }
   }
 
   action parseClassName {
@@ -194,12 +222,21 @@ static char *parseXml(char *p, VALUE *result) {
       *value = rb_class_new_instance(0, argv, class);
       fexec np;
     }
+    objectRefs[objectRefsTop] = *value;
+    objectRefsTop ++;
   }
 
   action parseMemberName {
-    char *np = parseString(fpc, pe, &memberName);
-    fexec np;
-    fnext v_type;
+    if(*fpc != 0x01) {
+      char *np = parseString(fpc, pe, &memberName);
+      fexec np;
+      fnext v_type;
+    }
+    else {
+      np = fpc+1;
+      fexec np;
+      fbreak;
+    }
   }
 
   action parseType {
@@ -215,6 +252,7 @@ static char *parseXml(char *p, VALUE *result) {
     else {
       rb_hash_aset(*value, rb_str_intern(memberName), memberValue);
     }
+
     fexec np;
     fnext member;
   }
@@ -226,12 +264,60 @@ static char *parseXml(char *p, VALUE *result) {
 
 static char *parseObject(char *p, char *pe, VALUE *value) {
   int cs = EVIL;
+  char *np;
+  unsigned long objectIndex = 0;
   VALUE className = Qnil;
   unsigned char isDynamic;
   unsigned char isConcrete = 0;
   VALUE memberName = Qnil;
   VALUE memberValue = Qnil;
   ID classForId = rb_intern("class_for");
+  %% write init;
+  %% write exec;
+  return np;
+}
+
+
+%%{
+  machine amf_array;
+  write data;
+  include amf_common;
+
+  action parseDensePortion {
+    *fpc = *fpc >> 1;
+    char *np = parseInteger(fpc, &denseLength);
+    fexec np;
+  }
+
+  action parseEmptyArray {
+    //TODO Optimize this so we initialize the ruby array with the parsed values
+    *value = rb_ary_new();
+    if(denseLength == 0) {
+      fbreak;
+    }
+  }
+
+  action parseType {
+    char *np; 
+    unsigned long i = 0;
+    for(i=0; i < denseLength; i++) {
+      np = parseAmf(fpc, pe, &element);
+      rb_ary_push(*value, element);
+      fpc = np;
+    }
+    fexec np;
+    fbreak;
+  }
+
+  main := U29A_value >parseDensePortion (UTF_8_empty >parseEmptyArray) value_type >parseType;
+}%%
+
+static char *parseArray(char *p, char *pe, VALUE *value) {
+  int cs = EVIL;
+  const char *eof = 0;
+  unsigned long denseLength = 0;
+  VALUE *elements;
+  VALUE element;
   %% write init;
   %% write exec;
   return p;
@@ -299,6 +385,12 @@ static char *parseObject(char *p, char *pe, VALUE *value) {
     fbreak;
   }
 
+  action parse_array {
+    fpc++;
+    np = parseArray(fpc, pe, value);
+    fbreak;
+  }
+
   action exit {
     //fhold; fbreak;
   }
@@ -312,7 +404,8 @@ static char *parseObject(char *p, char *pe, VALUE *value) {
             date_marker>parse_date |
             xml_doc_marker>parse_xml |
             xml_marker>parse_xml |
-            object_marker >parse_object)%*exit;
+            object_marker >parse_object |
+            array_marker >parse_array)%*exit;
 
 }%%
 static char *parseAmf(char *p, char *pe, VALUE *value) {
