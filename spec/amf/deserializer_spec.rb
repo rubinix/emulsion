@@ -136,15 +136,15 @@ describe "when deserializing" do
       end
 
       # Uses reference ids
-      # it "should deserialize an array of mixed objects" do
-        # input = object_fixture("amf3-mixedArray.bin")
-        # output = @parser.parse(input)
+      it "should deserialize an array of mixed objects" do
+        input = object_fixture("amf3-mixedArray.bin")
+        output = @parser.parse(input)
 
-        # h1 = {:foo_one => "bar_one"}
-        # h2 = {:foo_two => ""}
-        # so1 = {:foo_three => 42}
-        # output.should == [h1, h2, so1, {:foo_three => nil}, {}, [h1, h2, so1], [], 42, "", [], "", {}, "bar_one", so1]
-      # end
+        h1 = {:foo_one => "bar_one"}
+        h2 = {:foo_two => ""}
+        so1 = {:foo_three => 42}
+        output.should == [h1, h2, so1, {:foo_three => nil}, {}, [h1, h2, so1], [], 42, "", [], "", {}, "bar_one", so1]
+      end
 
       # it "should deserialize a byte array" do
         # input = object_fixture("amf3-byteArray.bin")

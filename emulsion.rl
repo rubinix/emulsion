@@ -4,19 +4,18 @@
 #include "ruby.h"
 #include "emulsion.h"
 
+typedef struct EmulsionStruct {
+  VALUE stringRefs[100];
+  int stringRefsTop;
+
+  VALUE objectRefs[100];
+  int objectRefsTop;
+} EmulsionParser;
 
 #define EVIL 0x666
-static VALUE parse_string(char *p, char *pe);
-static VALUE parse(VALUE self, VALUE amf);
-static char *parseAmf(char *p, char *pe, VALUE *val);
 static VALUE cEmulsion;
 
-static VALUE stringRefs[100];
-static int stringRefsTop = 0;
-
-static VALUE objectRefs[100];
-static int objectRefsTop = 0;
-
+static char *parseAmf(EmulsionParser *emulsionParser, char *p, char *pe, VALUE *value);
 
 %%{
   machine amf_common;
@@ -125,7 +124,7 @@ static char *parseDouble(char *p, double *result) {
     else {
       *fpc = *fpc > 1;
       np = parseInteger(fpc, &stringIndex);
-      *result = stringRefs[stringIndex];
+      *result = emulsionParser->stringRefs[stringIndex];
       fexec np;
       fbreak;
     }
@@ -133,13 +132,13 @@ static char *parseDouble(char *p, double *result) {
 
   action parse_string {
    *result = rb_str_new(fpc, length);
-   stringRefs[stringRefsTop] = *result;
-   stringRefsTop++;
+   emulsionParser->stringRefs[emulsionParser->stringRefsTop] = *result;
+   emulsionParser->stringRefsTop++;
   }
 
 main:= U29S_value >parse_length (UTF8_char+ >parse_string);
 }%%
-static char *parseString(char *p, char *pe, VALUE *result) {
+static char *parseString(EmulsionParser *emulsionParser, char *p, char *pe, VALUE *result) {
   int cs = EVIL;
   unsigned long length = 0;
   char *np;
@@ -195,7 +194,7 @@ static char *parseXml(char *p, VALUE *result) {
     else {
       *fpc = *fpc > 1;
       np = parseInteger(fpc, &objectIndex);
-      *value = objectRefs[objectIndex];
+      *value = emulsionParser->objectRefs[objectIndex];
       fexec np;
       fbreak;
     }
@@ -209,7 +208,7 @@ static char *parseXml(char *p, VALUE *result) {
     }
     else {
       isConcrete = 1;
-      char *np = parseString(fpc, pe, &className);
+      char *np = parseString(emulsionParser, fpc, pe, &className);
 
       VALUE class = rb_funcall(cEmulsion, classForId, 1, className);
 
@@ -222,13 +221,13 @@ static char *parseXml(char *p, VALUE *result) {
       *value = rb_class_new_instance(0, argv, class);
       fexec np;
     }
-    objectRefs[objectRefsTop] = *value;
-    objectRefsTop ++;
+    emulsionParser->objectRefs[emulsionParser->objectRefsTop] = *value;
+    emulsionParser->objectRefsTop ++;
   }
 
   action parseMemberName {
     if(*fpc != 0x01) {
-      char *np = parseString(fpc, pe, &memberName);
+      char *np = parseString(emulsionParser, fpc, pe, &memberName);
       fexec np;
       fnext v_type;
     }
@@ -240,7 +239,7 @@ static char *parseXml(char *p, VALUE *result) {
   }
 
   action parseType {
-    char *np = parseAmf(fpc, pe, &memberValue);
+    char *np = parseAmf(emulsionParser, fpc, pe, &memberValue);
     if(isConcrete) {
       unsigned long memberNameLen = RSTRING(memberName)->len;
       char instance_var_name[memberNameLen + 1];
@@ -262,7 +261,7 @@ static char *parseXml(char *p, VALUE *result) {
   object:= U29O_traits >parseDynamic class_name >parseClassName (U29S_value)> {fhold; fgoto member;};
 }%%
 
-static char *parseObject(char *p, char *pe, VALUE *value) {
+static char *parseObject(EmulsionParser *emulsionParser, char *p, char *pe, VALUE *value) {
   int cs = EVIL;
   char *np;
   unsigned long objectIndex = 0;
@@ -284,8 +283,17 @@ static char *parseObject(char *p, char *pe, VALUE *value) {
   include amf_common;
 
   action parseDensePortion {
-    *fpc = *fpc >> 1;
-    char *np = parseInteger(fpc, &denseLength);
+    if(*fpc & 0x01 == 1) {
+      *fpc = *fpc >> 1;
+      np = parseInteger(fpc, &denseLength);
+    }
+    else {
+      *fpc = *fpc > 1;
+      np = parseInteger(fpc, &arrayIndex);
+      *value = emulsionParser->objectRefs[arrayIndex];
+      fexec np;
+      fbreak;
+    }
     fexec np;
   }
 
@@ -301,10 +309,13 @@ static char *parseObject(char *p, char *pe, VALUE *value) {
     char *np; 
     unsigned long i = 0;
     for(i=0; i < denseLength; i++) {
-      np = parseAmf(fpc, pe, &element);
+      np = parseAmf(emulsionParser, fpc, pe, &element);
       rb_ary_push(*value, element);
       fpc = np;
     }
+    emulsionParser->objectRefs[emulsionParser->objectRefsTop] = *value;
+    emulsionParser->objectRefsTop ++;
+
     fexec np;
     fbreak;
   }
@@ -312,9 +323,11 @@ static char *parseObject(char *p, char *pe, VALUE *value) {
   main := U29A_value >parseDensePortion (UTF_8_empty >parseEmptyArray) value_type >parseType;
 }%%
 
-static char *parseArray(char *p, char *pe, VALUE *value) {
+static char *parseArray(EmulsionParser *emulsionParser, char *p, char *pe, VALUE *value) {
   int cs = EVIL;
   const char *eof = 0;
+  char *np;
+  unsigned long arrayIndex = 0;
   unsigned long denseLength = 0;
   VALUE *elements;
   VALUE element;
@@ -375,19 +388,19 @@ static char *parseArray(char *p, char *pe, VALUE *value) {
 
   action parse_string {
     fpc++;
-    np = parseString(fpc, pe, value);
+    np = parseString(emulsionParser, fpc, pe, value);
     fbreak;
   }
 
   action parse_object {
     fpc++;
-    np = parseObject(fpc, pe, value);
+    np = parseObject(emulsionParser, fpc, pe, value);
     fbreak;
   }
 
   action parse_array {
     fpc++;
-    np = parseArray(fpc, pe, value);
+    np = parseArray(emulsionParser, fpc, pe, value);
     fbreak;
   }
 
@@ -408,7 +421,7 @@ static char *parseArray(char *p, char *pe, VALUE *value) {
             array_marker >parse_array)%*exit;
 
 }%%
-static char *parseAmf(char *p, char *pe, VALUE *value) {
+static char *parseAmf(EmulsionParser *emulsionParser, char *p, char *pe, VALUE *value) {
   int cs = EVIL;
   char *np;
 
@@ -418,18 +431,55 @@ static char *parseAmf(char *p, char *pe, VALUE *value) {
   return np;
 }
 
+
+static VALUE cEmulsion_initialize(VALUE self) {
+  EmulsionParser *emulsionParser;
+  Data_Get_Struct(self, EmulsionParser, emulsionParser);
+  emulsionParser->objectRefsTop = 0;
+  emulsionParser->objectRefsTop = 0;
+}
+
 static VALUE parse(VALUE self, VALUE amf) {
+  EmulsionParser *emulsionParser;
+  Data_Get_Struct(self, EmulsionParser, emulsionParser);
+
   VALUE source = StringValue(amf);
   VALUE value = Qnil;
   long len = RSTRING(source)->len;
   char *p = RSTRING(source)->ptr;
   char *pe = p + len;
-  parseAmf(p, pe, &value);
+  parseAmf(emulsionParser, p, pe, &value);
   return value;
+}
+
+static EmulsionParser *emulsionAllocate()
+{
+    EmulsionParser *emulsionParser = ALLOC(EmulsionParser);
+    MEMZERO(emulsionParser, EmulsionParser, 1);
+    return emulsionParser;
+}
+
+static void emulsionMark(EmulsionParser *emulsionParser)
+{
+  //TODO Mark ruby objects stored in reference arrays
+  //rb_gc_mark_maybe(emulsionParser->stringRefs);
+  //rb_gc_mark_maybe(emulsionParser->objectRefs);
+}
+
+static void emulsionFree(EmulsionParser *emulsionParser)
+{
+    ruby_xfree(emulsionParser);
+}
+
+static VALUE cEmulsion_allocate(VALUE klass) {
+  EmulsionParser *emulsionParser = emulsionAllocate();
+  return Data_Wrap_Struct(klass, emulsionMark, emulsionFree, emulsionParser);
 }
 
 void Init_emulsion()
 {
   cEmulsion = rb_define_class("Emulsion", rb_cObject);
+  rb_define_alloc_func(cEmulsion, cEmulsion_allocate);
+  rb_define_method(cEmulsion, "initialize", cEmulsion_initialize, 0);
   rb_define_method(cEmulsion, "parse", parse, 1);
 }
