@@ -119,10 +119,18 @@ static char *parseDouble(char *p, double *result) {
     if(*fpc & 0x01 == 1) {
       np = parseInteger(fpc, &length);
       length = length >> 1;
-      fexec np;
+      if(length == 0) {
+        *result = rb_str_new("",0);
+        fexec np;
+        fbreak;
+      }
+      else {
+        fexec np;
+      }
     }
     else {
-      *fpc = *fpc > 1;
+      *fpc = *fpc >> 1;
+      unsigned long stringIndex = 0;
       np = parseInteger(fpc, &stringIndex);
       *result = emulsionParser->stringRefs[stringIndex];
       fexec np;
@@ -142,7 +150,6 @@ static char *parseString(EmulsionParser *emulsionParser, char *p, char *pe, VALU
   int cs = EVIL;
   unsigned long length = 0;
   char *np;
-  unsigned long stringIndex = 0;
 
   %% write init;
   %% write exec;
@@ -170,12 +177,26 @@ static char *parseDate(char *p, VALUE *result) {
   return p;
 }
 
-static char *parseXml(char *p, VALUE *result) {
-  *p = *p >> 1;
-  unsigned long length = 0;
-  char *np = parseInteger(p, &length);
-  *result = rb_str_new(np, length);
-  return np+length;
+//TODO Reference lookup for XML
+static char *parseXml(EmulsionParser *emulsionParser, char *p, VALUE *result) {
+  char *np;
+  if(*p & 0x01 == 1) {
+    unsigned long length = 0;
+    *p = *p >> 1;
+    np = parseInteger(p, &length);
+    *result = rb_str_new(np, length);
+    emulsionParser->objectRefs[emulsionParser->objectRefsTop] = *result;
+    emulsionParser->objectRefsTop++;
+    np = np+length;
+    return np;
+  }
+  else {
+    unsigned long objectIndex = 0;
+    *p = *p >> 1;
+    np = parseInteger(p, &objectIndex);
+    *result = emulsionParser->objectRefs[objectIndex];
+    return np;
+  }
 }
 
 %%{
@@ -192,7 +213,8 @@ static char *parseXml(char *p, VALUE *result) {
       fexec np;
     }
     else {
-      *fpc = *fpc > 1;
+      unsigned long objectIndex = 0;
+      *fpc = *fpc >> 1;
       np = parseInteger(fpc, &objectIndex);
       *value = emulsionParser->objectRefs[objectIndex];
       fexec np;
@@ -203,7 +225,7 @@ static char *parseXml(char *p, VALUE *result) {
   action parseClassName {
     if(*fpc == 0x01) {
       *value = rb_hash_new();
-      fpc++;
+      fpc = fpc+1;
       fexec fpc;
     }
     else {
@@ -222,19 +244,27 @@ static char *parseXml(char *p, VALUE *result) {
       fexec np;
     }
     emulsionParser->objectRefs[emulsionParser->objectRefsTop] = *value;
-    emulsionParser->objectRefsTop ++;
+    emulsionParser->objectRefsTop++;
   }
 
   action parseMemberName {
-    if(*fpc != 0x01) {
+    if(*fpc == 0x01) {
+      np = fpc+1;
+      fexec np;
+      fbreak;
+    }
+    else if(*fpc & 0x01 == 1) {
       char *np = parseString(emulsionParser, fpc, pe, &memberName);
       fexec np;
       fnext v_type;
     }
     else {
-      np = fpc+1;
+      unsigned long stringMemberIndex = 0;
+      *fpc = *fpc >> 1;
+      np = parseInteger(fpc, &stringMemberIndex);
+      memberName = emulsionParser->stringRefs[stringMemberIndex];
       fexec np;
-      fbreak;
+      fnext v_type;
     }
   }
 
@@ -264,7 +294,6 @@ static char *parseXml(char *p, VALUE *result) {
 static char *parseObject(EmulsionParser *emulsionParser, char *p, char *pe, VALUE *value) {
   int cs = EVIL;
   char *np;
-  unsigned long objectIndex = 0;
   VALUE className = Qnil;
   unsigned char isDynamic;
   unsigned char isConcrete = 0;
@@ -288,7 +317,8 @@ static char *parseObject(EmulsionParser *emulsionParser, char *p, char *pe, VALU
       np = parseInteger(fpc, &denseLength);
     }
     else {
-      *fpc = *fpc > 1;
+      unsigned long arrayIndex = 0;
+      *fpc = *fpc >> 1;
       np = parseInteger(fpc, &arrayIndex);
       *value = emulsionParser->objectRefs[arrayIndex];
       fexec np;
@@ -300,23 +330,21 @@ static char *parseObject(EmulsionParser *emulsionParser, char *p, char *pe, VALU
   action parseEmptyArray {
     //TODO Optimize this so we initialize the ruby array with the parsed values
     *value = rb_ary_new();
+    emulsionParser->objectRefs[emulsionParser->objectRefsTop] = *value;
+    emulsionParser->objectRefsTop++;
+
     if(denseLength == 0) {
       fbreak;
     }
   }
 
   action parseType {
-    char *np; 
     unsigned long i = 0;
     for(i=0; i < denseLength; i++) {
-      np = parseAmf(emulsionParser, fpc, pe, &element);
+      fpc = parseAmf(emulsionParser, fpc, pe, &element);
       rb_ary_push(*value, element);
-      fpc = np;
     }
-    emulsionParser->objectRefs[emulsionParser->objectRefsTop] = *value;
-    emulsionParser->objectRefsTop ++;
-
-    fexec np;
+    fexec fpc;
     fbreak;
   }
 
@@ -327,7 +355,6 @@ static char *parseArray(EmulsionParser *emulsionParser, char *p, char *pe, VALUE
   int cs = EVIL;
   const char *eof = 0;
   char *np;
-  unsigned long arrayIndex = 0;
   unsigned long denseLength = 0;
   VALUE *elements;
   VALUE element;
@@ -382,7 +409,7 @@ static char *parseArray(EmulsionParser *emulsionParser, char *p, char *pe, VALUE
 
   action parse_xml {
     fpc++;
-    parseXml(fpc, value);
+    np = parseXml(emulsionParser, fpc, value);
     fbreak;
   }
 

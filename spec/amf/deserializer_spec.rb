@@ -158,7 +158,7 @@ describe "when deserializing" do
 
       # it "should deserialize an empty dictionary" do
         # input = object_fixture("amf3-emptyDictionary.bin")
-        # output = RocketAMF.deserialize(input, 3)
+        # output = @parser.parse(input)
         # output.should == {}
       # end
 
@@ -224,29 +224,29 @@ describe "when deserializing" do
         # output[1].foo.should == "bar"
       # end
 
-      # it "should keep references of duplicate arrays" do
-        # input = object_fixture("amf3-arrayRef.bin")
-        # output = RocketAMF.deserialize(input, 3)
+      it "should keep references of duplicate arrays" do
+        input = object_fixture("amf3-arrayRef.bin")
+        output = @parser.parse(input)
 
-        # a = [1,2,3]
-        # b = %w{ a b c }
-        # output.should == [a, b, a, b]
-      # end
+        a = [1,2,3]
+        b = %w{ a b c }
+        output.should == [a, b, a, b]
+      end
 
-      # it "should not keep references of duplicate empty arrays unless the object_id matches" do
-        # input = object_fixture("amf3-emptyArrayRef.bin")
-        # output = RocketAMF.deserialize(input, 3)
+      it "should not keep references of duplicate empty arrays unless the object_id matches" do
+        input = object_fixture("amf3-emptyArrayRef.bin")
+        output = @parser.parse(input)
 
-        # a = []
-        # b = []
-        # output.should == [a,b,a,b]
-      # end
+        a = []
+        b = []
+        output.should == [a,b,a,b]
+      end
 
-      # it "should keep references of duplicate XML and XMLDocuments" do
-        # input = object_fixture("amf3-xmlRef.bin")
-        # output = RocketAMF.deserialize(input, 3)
-        # output.should == ['<parent><child prop="test"/></parent>', '<parent><child prop="test"/></parent>']
-      # end
+      it "should keep references of duplicate XML and XMLDocuments" do
+        input = object_fixture("amf3-xmlRef.bin")
+        output = @parser.parse(input)
+        output.should == ['<parent><child prop="test"/></parent>', '<parent><child prop="test"/></parent>']
+      end
 
       # it "should keep references of duplicate byte arrays" do
         # input = object_fixture("amf3-byteArrayRef.bin")
