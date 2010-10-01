@@ -73,11 +73,11 @@ describe "when deserializing" do
         output.should == "foo"
       end
 
-      # it "should deserialize dates" do
-        # input = object_fixture("amf3-date.bin")
-        # output = @parser.parse(input)
-        # output.should == Time.at(0)
-      # end
+      it "should deserialize dates" do
+        input = object_fixture("amf3-date.bin")
+        output = @parser.parse(input)
+        output.should == Time.at(0)
+      end
 
       it "should deserialize XML" do
         # XMLDocument tag
@@ -255,14 +255,13 @@ describe "when deserializing" do
         # output[0].string.should == "ASDF"
       # end
 
-      # it "should deserialize a deep object graph with circular references" do
-        # input = object_fixture("amf3-graphMember.bin")
-        # output = RocketAMF.deserialize(input, 3)
+      it "should deserialize a deep object graph with circular references" do
+        input = object_fixture("amf3-graphMember.bin")
+        output = @parser.parse(input)
 
-        # output[:children][0][:parent].should === output
-        # output[:parent].should === nil
-        # output[:children].length.should == 2
-        # Allen R. - Below was all commented out
+        output[:children][0][:parent].should === output
+        output[:parent].should === nil
+        output[:children].length.should == 2
         # Expected object:
         # parent = Hash.new
         # child1 = Hash.new
@@ -276,3 +275,4 @@ describe "when deserializing" do
       end
     end
   end
+end

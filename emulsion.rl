@@ -157,27 +157,36 @@ static char *parseString(EmulsionParser *emulsionParser, char *p, char *pe, VALU
   return np+length;
 }
 
-static char *parseDate(char *p, VALUE *result) {
-  p++;
-  p++;
+static char *parseDate(EmulsionParser *emulsionParser, char *p, VALUE *result) {
 
-  union timeOrByte {
-    char buffer[sizeof(time_t)];
-    time_t val;
-  } converter;
+  if(*p & 0x01 == 1) {
+    p++;
 
-  int i = 0;
+    union timeOrByte {
+      char buffer[8];
+      time_t val;
+    } converter;
 
-  for(i = 7; i >= 0; i--) {
-    converter.buffer[i] = *p;
-    ++p;
+    int i = 0;
+    for(i = 7; i >= 0; i--) {
+      converter.buffer[i] = *p;
+      ++p;
+    }
+
+    *result = rb_time_new(0, converter.val);
+    emulsionParser->objectRefs[emulsionParser->objectRefsTop] = *result;
+    emulsionParser->objectRefsTop++;
+  }
+  else {
+    unsigned long objectIndex = 0;
+    *p = *p >> 1;
+    p = parseInteger(p, &objectIndex);
+    *result = emulsionParser->objectRefs[objectIndex];
   }
 
-  *result = rb_time_new(0, converter.val);
   return p;
 }
 
-//TODO Reference lookup for XML
 static char *parseXml(EmulsionParser *emulsionParser, char *p, VALUE *result) {
   char *np;
   if(*p & 0x01 == 1) {
@@ -403,7 +412,8 @@ static char *parseArray(EmulsionParser *emulsionParser, char *p, char *pe, VALUE
   }
 
   action parse_date {
-    np = parseDate(fpc, value);
+    fpc++;
+    np = parseDate(emulsionParser, fpc, value);
     fbreak;
   }
 
