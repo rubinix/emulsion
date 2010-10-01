@@ -7,7 +7,6 @@ require File.dirname(__FILE__) + '/../spec_helper.rb'
 
 describe "when deserializing" do
   before :each do
-    # RocketAMF::ClassMapper.reset
     @parser = Emulsion.new
   end
 
@@ -195,15 +194,14 @@ describe "when deserializing" do
         output.should == ["",""]
       end
 
-      # it "should keep references of duplicate dates" do
-        # input = object_fixture("amf3-datesRef.bin")
-        # output = RocketAMF.deserialize(input, 3)
+      it "should keep references of duplicate dates" do
+        input = object_fixture("amf3-datesRef.bin")
+        output = @parser.parse(input)
 
-        # output[0].should equal(output[1])
-        # Allen R. - The below was commented out
+        output[0].should equal(output[1])
         # Expected object:
         # [DateTime.parse "1/1/1970", DateTime.parse "1/1/1970"]
-      # end
+      end
 
       it "should keep reference of duplicate objects" do
         input = object_fixture("amf3-objRef.bin")
